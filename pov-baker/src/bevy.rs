@@ -4,7 +4,7 @@ extern crate std;
 
 use alloc::vec::Vec;
 use bevy::mesh::{Mesh, VertexAttributeValues};
-use bevy::prelude::{Cone, Cuboid, Cylinder, Sphere, Vec3};
+use bevy::prelude::{Cone, Cuboid, Cylinder, Quat, Sphere, Vec3};
 use pov_core::serial::{Animation, Keyframe, Page};
 use pov_core::Frame;
 use std::collections::HashMap;
@@ -17,6 +17,7 @@ pub enum SceneSource {
     GltfFile(String),
     ObjFile(String),
     StlFile(String),
+    Dna,
     ProceduralCube { half_size_mm: f32 },
     ProceduralSphere { radius_mm: f32 },
     ProceduralCylinder { radius_mm: f32, height_mm: f32 },
@@ -138,6 +139,9 @@ fn extract_triangles(mesh: &Mesh) -> Vec<Tri> {
 /// 程序化几何体 — 直接用 Bevy 的 Mesh::from(primitive)
 fn procedural_triangles(source: &SceneSource) -> Vec<Tri> {
     let mesh = match source {
+        SceneSource::Dna => {
+            return build_dna_triangles();
+        }
         SceneSource::ProceduralCube { half_size_mm } => {
             let hs = half_size_mm / 10.0;
             Mesh::from(Cuboid::from_size(Vec3::splat(hs * 2.0)))
@@ -160,6 +164,67 @@ fn procedural_triangles(source: &SceneSource) -> Vec<Tri> {
         _ => return Vec::new(),
     };
     extract_triangles(&mesh)
+}
+
+fn build_dna_triangles() -> Vec<Tri> {
+    let backbone_radius = 0.15;
+    let rung_radius = 0.04;
+    let r = 1.2;
+    let h = 0.4;
+    let steps = 60;
+    let max_t = core::f32::consts::PI * 6.0;
+    let dt = max_t / steps as f32;
+
+    let mut triangles = Vec::new();
+    let sphere_mesh = Mesh::from(Sphere { radius: backbone_radius });
+    let sphere_tris = extract_triangles(&sphere_mesh);
+
+    for i in 0..=steps {
+        let t = i as f32 * dt;
+        let y = t * h - (max_t * h / 2.0);
+
+        let p1 = Vec3::new(r * t.cos(), y, r * t.sin());
+        let p2 = Vec3::new(
+            r * (t + core::f32::consts::PI).cos(),
+            y,
+            r * (t + core::f32::consts::PI).sin(),
+        );
+
+        triangles.extend(transform_triangles(&sphere_tris, Quat::IDENTITY, p1));
+        triangles.extend(transform_triangles(&sphere_tris, Quat::IDENTITY, p2));
+
+        let dist = p1.distance(p2);
+        let cyl_mesh = Mesh::from(Cylinder {
+            radius: rung_radius,
+            half_height: dist / 2.0,
+        });
+        let cyl_tris = extract_triangles(&cyl_mesh);
+        let dir = (p2 - p1).normalize_or_zero();
+        let rot = if dir.length_squared() > 0.0 {
+            Quat::from_rotation_arc(Vec3::Y, dir)
+        } else {
+            Quat::IDENTITY
+        };
+        let mid = (p1 + p2) * 0.5;
+        triangles.extend(transform_triangles(&cyl_tris, rot, mid));
+    }
+
+    triangles
+}
+
+fn transform_triangles(tris: &[Tri], rot: Quat, offset: Vec3) -> Vec<Tri> {
+    let mut out = Vec::with_capacity(tris.len());
+    for tri in tris {
+        let v0 = rot * Vec3::from(tri.v0) + offset;
+        let v1 = rot * Vec3::from(tri.v1) + offset;
+        let v2 = rot * Vec3::from(tri.v2) + offset;
+        out.push(Tri {
+            v0: [v0.x, v0.y, v0.z],
+            v1: [v1.x, v1.y, v1.z],
+            v2: [v2.x, v2.y, v2.z],
+        });
+    }
+    out
 }
 
 /// glTF 加载 — 用 gltf crate（专门的文件加载器）

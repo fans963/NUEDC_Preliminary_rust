@@ -90,6 +90,7 @@ enum ShapeKind {
     Cylinder,
     Cone,
     Model,
+    Dna,
 }
 
 impl std::fmt::Display for ShapeKind {
@@ -100,6 +101,7 @@ impl std::fmt::Display for ShapeKind {
             ShapeKind::Cylinder => write!(f, "圆柱体"),
             ShapeKind::Cone => write!(f, "圆锥体"),
             ShapeKind::Model => write!(f, "模型文件"),
+            ShapeKind::Dna => write!(f, "DNA 双螺旋"),
         }
     }
 }
@@ -369,6 +371,7 @@ fn handle_shape_change(
             radius_mm: state.radius,
             height_mm: state.height,
         },
+        ShapeKind::Dna => SceneSource::Dna,
         ShapeKind::Model => {
             let Some(ref source) = state.model_source else {
                 state.triangles.clear();
@@ -397,7 +400,7 @@ fn handle_shape_change(
             radius: state.radius / 10.0,
             height: state.height / 10.0,
         }),
-        ShapeKind::Model => mesh_from_triangles(&state.triangles),
+        ShapeKind::Model | ShapeKind::Dna => mesh_from_triangles(&state.triangles),
     };
 
     let handle = meshes.add(gpu_mesh);
@@ -447,6 +450,7 @@ fn gui_panel(
                     ui.selectable_value(&mut state.shape, ShapeKind::Cylinder, "圆柱体");
                     ui.selectable_value(&mut state.shape, ShapeKind::Cone, "圆锥体");
                     ui.selectable_value(&mut state.shape, ShapeKind::Model, "模型文件");
+                    ui.selectable_value(&mut state.shape, ShapeKind::Dna, "DNA 双螺旋");
                 });
             if state.shape != prev_shape {
                 state.shape_dirty = true;
@@ -490,6 +494,10 @@ fn gui_panel(
                         }
                     }
                 }
+            } else if state.shape == ShapeKind::Dna {
+                ui.label("DNA 结构为内置动画模型");
+                ui.add_enabled(false, egui::Slider::new(&mut state.num_steps, 64..=2048)
+                    .text("角度步数"));
             } else {
                 ui.label("📐 形状参数 (mm)");
                 let mut changed = false;
@@ -508,13 +516,12 @@ fn gui_panel(
                         changed |= ui.add(egui::Slider::new(&mut state.height, 5.0..=50.0)
                             .text("高度")).changed();
                     }
-                    ShapeKind::Model => {}
+                    ShapeKind::Model | ShapeKind::Dna => {}
                 }
                 if changed {
                     state.shape_dirty = true;
                 }
             }
-
             ui.separator();
 
             // ── 渲染配置 ────────────────────────────────
@@ -751,6 +758,7 @@ fn current_scene_source(state: &GuiState) -> SceneSource {
             radius_mm: state.radius,
             height_mm: state.height,
         },
+        ShapeKind::Dna => SceneSource::Dna,
         ShapeKind::Model => state.model_source.clone().unwrap_or_else(|| {
             SceneSource::ProceduralCube { half_size_mm: 14.0 }
         }),
