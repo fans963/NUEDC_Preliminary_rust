@@ -11,6 +11,9 @@ use bevy::prelude::*;
 use bevy::window::WindowResolution;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use egui::{FontData, FontDefinitions, FontFamily};
+use bevy::asset::RenderAssetUsages;
+use bevy::mesh::{Indices, PrimitiveTopology};
+use rfd::FileDialog;
 use pov_baker::bevy::{
     BevyRenderer, SceneSource, Tri,
     get_triangles, render_angle_from_tris,
@@ -74,6 +77,10 @@ struct GuiState {
     esp_ip: String,
     /// 状态消息
     status_msg: String,
+    /// 模型文件路径
+    model_path: String,
+    /// 已加载的模型源
+    model_source: Option<SceneSource>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,6 +89,7 @@ enum ShapeKind {
     Sphere,
     Cylinder,
     Cone,
+    Model,
 }
 
 impl std::fmt::Display for ShapeKind {
@@ -91,10 +99,10 @@ impl std::fmt::Display for ShapeKind {
             ShapeKind::Sphere => write!(f, "球体"),
             ShapeKind::Cylinder => write!(f, "圆柱体"),
             ShapeKind::Cone => write!(f, "圆锥体"),
+            ShapeKind::Model => write!(f, "模型文件"),
         }
     }
 }
-
 impl Default for GuiState {
     fn default() -> Self {
         let source = SceneSource::ProceduralCube { half_size_mm: 14.0 };
@@ -116,6 +124,8 @@ impl Default for GuiState {
             shape_dirty: false,
             esp_ip: "192.168.4.1".to_string(),
             status_msg: "就绪".to_string(),
+            model_path: String::new(),
+            model_source: None,
         }
     }
 }
@@ -359,6 +369,14 @@ fn handle_shape_change(
             radius_mm: state.radius,
             height_mm: state.height,
         },
+        ShapeKind::Model => {
+            let Some(ref source) = state.model_source else {
+                state.triangles.clear();
+                state.status_msg = "❌ 未加载模型".to_string();
+                return;
+            };
+            source.clone()
+        }
     };
 
     // 更新 CPU 三角形缓存
@@ -379,6 +397,7 @@ fn handle_shape_change(
             radius: state.radius / 10.0,
             height: state.height / 10.0,
         }),
+        ShapeKind::Model => mesh_from_triangles(&state.triangles),
     };
 
     let handle = meshes.add(gpu_mesh);
@@ -427,6 +446,7 @@ fn gui_panel(
                     ui.selectable_value(&mut state.shape, ShapeKind::Sphere, "球体");
                     ui.selectable_value(&mut state.shape, ShapeKind::Cylinder, "圆柱体");
                     ui.selectable_value(&mut state.shape, ShapeKind::Cone, "圆锥体");
+                    ui.selectable_value(&mut state.shape, ShapeKind::Model, "模型文件");
                 });
             if state.shape != prev_shape {
                 state.shape_dirty = true;
@@ -435,26 +455,64 @@ fn gui_panel(
             ui.separator();
 
             // ── 参数滑块 ────────────────────────────────
-            ui.label("📐 形状参数 (mm)");
-            let mut changed = false;
-            match state.shape {
-                ShapeKind::Cube => {
-                    changed |= ui.add(egui::Slider::new(&mut state.half_size, 5.0..=30.0)
-                        .text("半边长")).changed();
+            if state.shape == ShapeKind::Model {
+                ui.label("模型文件路径");
+                ui.horizontal(|ui| {
+                    ui.text_edit_singleline(&mut state.model_path);
+                    if ui.button("选择文件").clicked() {
+                        if let Some(path) = FileDialog::new()
+                            .add_filter("3D Models", &["gltf", "glb", "obj", "stl"])
+                            .pick_file()
+                        {
+                            state.model_path = path.to_string_lossy().to_string();
+                            match model_source_from_path(&state.model_path) {
+                                Ok(source) => {
+                                    state.model_source = Some(source);
+                                    state.shape_dirty = true;
+                                    state.status_msg = "✅ 模型已加载".to_string();
+                                }
+                                Err(err) => {
+                                    state.status_msg = format!("❌ 模型路径无效: {}", err);
+                                }
+                            }
+                        }
+                    }
+                });
+                if ui.button("加载模型").clicked() {
+                    match model_source_from_path(&state.model_path) {
+                        Ok(source) => {
+                            state.model_source = Some(source);
+                            state.shape_dirty = true;
+                            state.status_msg = "✅ 模型已加载".to_string();
+                        }
+                        Err(err) => {
+                            state.status_msg = format!("❌ 模型路径无效: {}", err);
+                        }
+                    }
                 }
-                ShapeKind::Sphere => {
-                    changed |= ui.add(egui::Slider::new(&mut state.radius, 3.0..=30.0)
-                        .text("半径")).changed();
+            } else {
+                ui.label("📐 形状参数 (mm)");
+                let mut changed = false;
+                match state.shape {
+                    ShapeKind::Cube => {
+                        changed |= ui.add(egui::Slider::new(&mut state.half_size, 5.0..=30.0)
+                            .text("半边长")).changed();
+                    }
+                    ShapeKind::Sphere => {
+                        changed |= ui.add(egui::Slider::new(&mut state.radius, 3.0..=30.0)
+                            .text("半径")).changed();
+                    }
+                    ShapeKind::Cylinder | ShapeKind::Cone => {
+                        changed |= ui.add(egui::Slider::new(&mut state.radius, 3.0..=30.0)
+                            .text("半径")).changed();
+                        changed |= ui.add(egui::Slider::new(&mut state.height, 5.0..=50.0)
+                            .text("高度")).changed();
+                    }
+                    ShapeKind::Model => {}
                 }
-                ShapeKind::Cylinder | ShapeKind::Cone => {
-                    changed |= ui.add(egui::Slider::new(&mut state.radius, 3.0..=30.0)
-                        .text("半径")).changed();
-                    changed |= ui.add(egui::Slider::new(&mut state.height, 5.0..=50.0)
-                        .text("高度")).changed();
+                if changed {
+                    state.shape_dirty = true;
                 }
-            }
-            if changed {
-                state.shape_dirty = true;
             }
 
             ui.separator();
@@ -499,6 +557,10 @@ fn gui_panel(
             ui.heading("📦 导出");
 
             if ui.button("🔥 烘焙动画").clicked() {
+                if state.shape == ShapeKind::Model && state.model_source.is_none() {
+                    state.status_msg = "❌ 请先加载模型文件".to_string();
+                    return;
+                }
                 let source = current_scene_source(&state);
                 let config = RenderConfig {
                     num_steps: state.num_steps,
@@ -621,6 +683,60 @@ fn draw_led_grid(ui: &mut egui::Ui, frame: &Frame) {
     ui.label(format!("亮灯: {}/256", lit_count));
 }
 
+fn mesh_from_triangles(triangles: &[Tri]) -> Mesh {
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(triangles.len() * 3);
+    let mut normals: Vec<[f32; 3]> = Vec::with_capacity(triangles.len() * 3);
+    let mut indices: Vec<u32> = Vec::with_capacity(triangles.len() * 3);
+
+    for (i, tri) in triangles.iter().enumerate() {
+        let base = (i * 3) as u32;
+        positions.push(tri.v0);
+        positions.push(tri.v1);
+        positions.push(tri.v2);
+
+        let v0 = Vec3::from(tri.v0);
+        let v1 = Vec3::from(tri.v1);
+        let v2 = Vec3::from(tri.v2);
+        let mut n = (v1 - v0).cross(v2 - v0);
+        if n.length_squared() > 0.0 {
+            n = n.normalize();
+        } else {
+            n = Vec3::Z;
+        }
+        let normal = [n.x, n.y, n.z];
+        normals.push(normal);
+        normals.push(normal);
+        normals.push(normal);
+
+        indices.push(base);
+        indices.push(base + 1);
+        indices.push(base + 2);
+    }
+
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+fn model_source_from_path(path: &str) -> Result<SceneSource, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("路径为空".to_string());
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.ends_with(".gltf") || lower.ends_with(".glb") {
+        Ok(SceneSource::GltfFile(trimmed.to_string()))
+    } else if lower.ends_with(".obj") {
+        Ok(SceneSource::ObjFile(trimmed.to_string()))
+    } else if lower.ends_with(".stl") {
+        Ok(SceneSource::StlFile(trimmed.to_string()))
+    } else {
+        Err("仅支持 .gltf/.glb/.obj/.stl".to_string())
+    }
+}
+
 // ── 辅助函数 ────────────────────────────────────────────────
 
 fn current_scene_source(state: &GuiState) -> SceneSource {
@@ -635,6 +751,9 @@ fn current_scene_source(state: &GuiState) -> SceneSource {
             radius_mm: state.radius,
             height_mm: state.height,
         },
+        ShapeKind::Model => state.model_source.clone().unwrap_or_else(|| {
+            SceneSource::ProceduralCube { half_size_mm: 14.0 }
+        }),
     }
 }
 

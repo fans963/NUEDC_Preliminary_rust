@@ -15,6 +15,8 @@ use crate::renderer::{FrameRenderer, RenderConfig, RenderResult};
 #[derive(Debug, Clone)]
 pub enum SceneSource {
     GltfFile(String),
+    ObjFile(String),
+    StlFile(String),
     ProceduralCube { half_size_mm: f32 },
     ProceduralSphere { radius_mm: f32 },
     ProceduralCylinder { radius_mm: f32, height_mm: f32 },
@@ -71,6 +73,8 @@ impl BevyRenderer {
 pub fn get_triangles(source: &SceneSource) -> Result<Vec<Tri>, BevyRenderError> {
     let triangles = match source {
         SceneSource::GltfFile(path) => load_gltf_triangles(path)?,
+        SceneSource::ObjFile(path) => load_obj_triangles(path)?,
+        SceneSource::StlFile(path) => load_stl_triangles(path)?,
         _ => procedural_triangles(source),
     };
     if triangles.is_empty() {
@@ -222,6 +226,72 @@ fn load_gltf_triangles(path: &str) -> Result<Vec<Tri>, BevyRenderError> {
                 }
             }
         }
+    }
+
+    Ok(triangles)
+}
+
+/// OBJ 加载
+fn load_obj_triangles(path: &str) -> Result<Vec<Tri>, BevyRenderError> {
+    let (models, _) = tobj::load_obj(
+        path,
+        &tobj::LoadOptions {
+            triangulate: true,
+            single_index: true,
+            ..Default::default()
+        },
+    )
+    .map_err(|e| BevyRenderError::AssetLoadFailed(format!("{}", e)))?;
+
+    let mut triangles = Vec::new();
+    for model in models {
+        let mesh = model.mesh;
+        let positions = mesh.positions;
+        let indices = mesh.indices;
+
+        if positions.len() % 3 != 0 {
+            continue;
+        }
+
+        for chunk in indices.chunks(3) {
+            if chunk.len() < 3 {
+                continue;
+            }
+            let i0 = chunk[0] as usize * 3;
+            let i1 = chunk[1] as usize * 3;
+            let i2 = chunk[2] as usize * 3;
+            if i2 + 2 >= positions.len() {
+                continue;
+            }
+            triangles.push(Tri {
+                v0: [positions[i0], positions[i0 + 1], positions[i0 + 2]],
+                v1: [positions[i1], positions[i1 + 1], positions[i1 + 2]],
+                v2: [positions[i2], positions[i2 + 1], positions[i2 + 2]],
+            });
+        }
+    }
+
+    Ok(triangles)
+}
+
+/// STL 加载
+fn load_stl_triangles(path: &str) -> Result<Vec<Tri>, BevyRenderError> {
+    let file = std::fs::File::open(path)
+        .map_err(|e| BevyRenderError::AssetLoadFailed(format!("{}", e)))?;
+    let mut reader = std::io::BufReader::new(file);
+    let stl = stl_io::read_stl(&mut reader)
+        .map_err(|e| BevyRenderError::AssetLoadFailed(format!("{}", e)))?;
+
+    let mut triangles = Vec::with_capacity(stl.faces.len());
+    for face in stl.faces {
+        let v0 = stl.vertices[face.vertices[0] as usize];
+        let v1 = stl.vertices[face.vertices[1] as usize];
+        let v2 = stl.vertices[face.vertices[2] as usize];
+        triangles.push(Tri {
+            v0: [v0[0], v0[1], v0[2]],
+            v1: [v1[0], v1[1], v1[2]],
+            v2: [v2[0], v2[1], v2[2]],
+        });
     }
 
     Ok(triangles)

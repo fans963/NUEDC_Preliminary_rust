@@ -32,11 +32,14 @@ gltf = { version = "1.4", default-features = false, features = ["utils"], option
 # GUI
 bevy_egui = { version = "0.39", optional = true }
 ureq = { version = "3", optional = true, features = ["json"] }
+tobj = { version = "4", optional = true }
+stl_io = { version = "0.7", optional = true }
+rfd = { version = "0.15", optional = true }
 
 [features]
 default = ["cli"]
-cli    = ["dep:clap", "bevy", "gltf"]
-gui    = ["dep:bevy_egui", "dep:ureq", "bevy", "gltf", "bevy/default"]
+cli    = ["dep:clap", "bevy", "gltf", "dep:tobj", "dep:stl_io"]
+gui    = ["dep:bevy_egui", "dep:ureq", "dep:tobj", "dep:stl_io", "dep:rfd", "bevy", "gltf", "bevy/default"]
 bevy   = ["dep:bevy", "std"]
 gltf   = ["dep:gltf", "std"]
 std    = []
