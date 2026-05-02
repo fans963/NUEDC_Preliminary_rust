@@ -1,0 +1,9 @@
+# pov-baker host 编译配置
+# 覆盖 workspace 根目录的 RISC-V 默认 target 和 build-std
+
+[env]
+DEFMT_LOG = "info"
+
+[unstable]
+# 空数组 = 不构建任何标准库 crate（使用预编译版本）
+build-std = []

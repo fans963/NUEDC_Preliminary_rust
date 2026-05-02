@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POV Display</title>
+    <link rel="icon" href="data:,">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--surface:#161b22;--surface-2:#21262d;--border:#30363d;--text:#e6edf3;--text-muted:#8b949e;--accent:#58a6ff;--success:#3fb950;--danger:#f85149;--radius:8px}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}
+.container{max-width:560px;margin:0 auto;padding:16px}
+header{text-align:center;padding:24px 0 16px}
+header h1{font-size:1.5rem;font-weight:600}
+.subtitle{color:var(--text-muted);font-size:0.85rem;margin-top:4px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.panel h2{font-size:0.95rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px}
+.status-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat-item{background:var(--surface-2);border-radius:6px;padding:12px;text-align:center}
+.stat-item .label{display:block;font-size:0.75rem;color:var(--text-muted);margin-bottom:4px}
+.stat-item .value{font-size:1.1rem;font-weight:700;font-variant-numeric:tabular-nums}
+.status-off{color:var(--danger)}.status-on{color:var(--success)}
+.button-group{display:flex;gap:8px}
+.btn{flex:1;padding:10px 16px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2);color:var(--text);font-size:0.9rem;font-weight:500;cursor:pointer;transition:all 0.15s ease;text-align:center}
+.btn:hover:not(:disabled){background:var(--surface);border-color:var(--accent)}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+.btn-start{border-color:var(--success);color:var(--success)}
+.btn-start:hover:not(:disabled){background:rgba(63,185,80,0.1)}
+.btn-stop{border-color:var(--danger);color:var(--danger)}
+.btn-stop:hover:not(:disabled){background:rgba(248,81,73,0.1)}
+.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent);flex:none}
+.btn-primary:hover{background:#4090e8}
+.shape-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.shape-btn{padding:14px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2);color:var(--text);font-size:0.9rem;cursor:pointer;transition:all 0.15s;text-align:center;line-height:1.3}
+.shape-btn:hover:not(:disabled){background:var(--surface);border-color:var(--accent);color:var(--accent)}
+.shape-btn:disabled{opacity:0.4;cursor:not-allowed}
+.shape-btn .icon{font-size:1.4rem;display:block;margin-bottom:4px}
+.upload-area{border:2px dashed var(--border);border-radius:6px;padding:20px;text-align:center;cursor:pointer;transition:border-color 0.15s;margin-bottom:8px}
+.upload-area:hover,.upload-area.drag-over{border-color:var(--accent);background:rgba(88,166,255,0.05)}
+.upload-hint{color:var(--text-muted);font-size:0.85rem}
+.upload-status{padding:8px 12px;border-radius:6px;font-size:0.85rem;margin-top:4px}
+.upload-status.success{background:rgba(63,185,80,0.1);color:var(--success);border:1px solid var(--success)}
+.upload-status.error{background:rgba(248,81,73,0.1);color:var(--danger);border:1px solid var(--danger)}
+.upload-status.info{background:rgba(88,166,255,0.1);color:var(--accent);border:1px solid var(--accent)}
+.upload-status.busy{background:rgba(88,166,255,0.15);color:var(--accent);border:1px solid var(--accent)}
+.hidden{display:none}
+.preview-canvas{display:block;margin:12px auto;border:1px solid var(--border);border-radius:4px;image-rendering:pixelated;width:200px;height:200px}
+.preview-controls{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:4px;flex-wrap:wrap}
+#frameInfo{font-size:0.85rem;color:var(--text-muted);text-align:center;min-width:120px}
+.page-select{display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:8px}
+.page-select label{color:var(--text-muted);font-size:0.85rem}
+.page-select select{background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:0.85rem}
+#previewPanel{transition:opacity 0.2s}
+.steps-input{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.steps-input label{color:var(--text-muted);font-size:0.85rem}
+.steps-input input{width:70px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface-2);color:var(--text);font-size:0.85rem;text-align:center}
+footer{text-align:center;padding:16px;color:var(--text-muted);font-size:0.75rem}
+</style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>🌀 POV Display</h1>
+        <p class="subtitle">ESP32-C5 · 体积极速显示</p>
+    </header>
+    <main>
+        <section class="panel">
+            <h2>系统状态</h2>
+            <div class="status-grid">
+                <div class="stat-item"><span class="label">运行</span><span id="statusIndicator" class="value status-off">停止</span></div>
+                <div class="stat-item"><span class="label">页面</span><span id="pageCount" class="value">--</span></div>
+                <div class="stat-item"><span class="label">动画</span><span id="animCount" class="value">0</span></div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>控制</h2>
+            <div class="button-group">
+                <button id="startBtn" class="btn btn-start">▶ 启动</button>
+                <button id="stopBtn" class="btn btn-stop" disabled>■ 停止</button>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>快速生成</h2>
+            <div class="steps-input">
+                <label>步数:</label>
+                <input type="number" id="stepsInput" value="256" min="32" max="1024">
+            </div>
+            <div class="shape-grid">
+                <div class="shape-btn" id="shapeCube"><span class="icon">■</span>正方体</div>
+                <div class="shape-btn" id="shapeSphere"><span class="icon">●</span>球体</div>
+                <div class="shape-btn" id="shapeCylinder"><span class="icon">▮</span>圆柱</div>
+                <div class="shape-btn" id="shapeCone"><span class="icon">▲</span>圆锥</div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>上传文件</h2>
+            <div class="upload-area" id="uploadArea">
+                <p class="upload-hint">拖入或选择 .bin 文件</p>
+                <input type="file" id="fileInput" accept=".bin" hidden>
+            </div>
+            <div id="uploadStatus" class="hidden"></div>
+        </section>
+
+        <section class="panel hidden" id="previewPanel">
+            <h2>帧预览</h2>
+            <div class="page-select" id="pageSelector">
+                <label>页面:</label>
+                <select id="pageSelect"></select>
+            </div>
+            <canvas id="previewCanvas" width="200" height="200" class="preview-canvas"></canvas>
+            <div id="frameInfo">帧 0/0</div>
+            <div class="preview-controls">
+                <button id="prevBtn" style="flex:none;padding:6px 14px;font-size:0.85rem" disabled>◀</button>
+                <span id="frameLabel">--</span>
+                <button id="nextBtn" style="flex:none;padding:6px 14px;font-size:0.85rem" disabled>▶</button>
+            </div>
+        </section>
+    </main>
+    <footer><p>NUEDC POV Display — Bevy 烘焙 · ESP32-C5 · 1800 RPM</p></footer>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// 纯数学形状生成器 (JS, 无外部依赖)
+// ═══════════════════════════════════════════════════════════════
+const PITCH = 4.0;
+
+function generateFrames(steps, hitTest) {
+    const frames = [];
+    for (let step = 0; step < steps; step++) {
+        const theta = (step / steps) * Math.PI * 2;
+        const frame = new Uint16Array(16);
+        for (let col = 0; col < 16; col++) {
+            for (let row = 0; row < 16; row++) {
+                if (hitTest(col, row, theta)) {
+                    frame[row] |= 1 << col;
+                }
+            }
+        }
+        frames.push(frame);
+    }
+    return frames;
+}
+
+const cube = (steps) => generateFrames(steps, (c, r, t) => {
+    const cx = (c - 7.5) * PITCH, cy = (r - 7.5) * PITCH;
+    return Math.abs(cy) <= 14 && Math.abs(cx * Math.cos(t)) <= 14 && Math.abs(cx * Math.sin(t)) <= 14;
+});
+
+const sphere = (steps) => generateFrames(steps, (c, r) => {
+    const cx = (c - 7.5) * PITCH, cy = (r - 7.5) * PITCH;
+    return cx * cx + cy * cy <= 196; // r² = 14²
+});
+
+const cylinder = (steps) => generateFrames(steps, (c, r) => {
+    const cx = (c - 7.5) * PITCH, cy = (r - 7.5) * PITCH;
+    return cx * cx <= 144 && Math.abs(cy) <= 14; // r²=12², h=28
+});
+
+const cone = (steps) => generateFrames(steps, (c, r, t) => {
+    const cx = (c - 7.5) * PITCH, cy = (r - 7.5) * PITCH;
+    // 圆锥: 底部半径 12mm, 高度 28mm
+    // 从底部(y=-14)到顶部(y=14), 半径线性缩小
+    const normalizedY = (cy + 14) / 28; // 0 = 底部, 1 = 顶部
+    const radiusAtY = 12 * (1 - normalizedY);
+    return cx * cx <= radiusAtY * radiusAtY;
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Postcard 编码器
+// ═══════════════════════════════════════════════════════════════
+
+function u16LE(v) { return [v & 0xff, (v >> 8) & 0xff]; }
+
+function varint(v) {
+    const b = [];
+    while (v >= 0x80) { b.push((v & 0x7f) | 0x80); v >>>= 7; }
+    b.push(v & 0x7f);
+    return b;
+}
+
+/// 将帧序列编码为 postcard Animation（单页）
+function encodeAnimation(frames) {
+    // 差分编码: 只记录变化的关键帧
+    const kf = [];
+    let prev = new Uint16Array(16);
+    for (let i = 0; i < frames.length; i++) {
+        let changed = false;
+        for (let r = 0; r < 16; r++) { if (frames[i][r] !== prev[r]) { changed = true; break; } }
+        if (changed) {
+            kf.push({ angle_tick: i, frame: frames[i] });
+            prev = new Uint16Array(frames[i]);
+        }
+    }
+
+    // 序列化: varint(page_count) + varint(keyframe_count) + keyframes...
+    const bytes = [];
+    bytes.push(...varint(1)); // 1 page
+    bytes.push(...varint(kf.length)); // keyframe count
+    for (const k of kf) {
+        bytes.push(...u16LE(k.angle_tick));
+        for (let r = 0; r < 16; r++) {
+            bytes.push(...u16LE(k.frame[r]));
+        }
+    }
+    return new Uint8Array(bytes);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Postcard 解码器
+// ═══════════════════════════════════════════════════════════════
+
+function readU16LE(buf, off) { return buf[off] | (buf[off + 1] << 8); }
+function readVarint(buf, off) {
+    let val = 0, shift = 0;
+    while (true) { const b = buf[off++]; val |= (b & 0x7f) << shift; if (!(b & 0x80)) break; shift += 7; }
+    return { val, off };
+}
+function decodeAnimation(data) {
+    const buf = new Uint8Array(data);
+    let off = 0;
+    const r0 = readVarint(buf, off); off = r0.off;
+    const pages = [];
+    for (let p = 0; p < r0.val; p++) {
+        const r1 = readVarint(buf, off); off = r1.off;
+        const kf = [];
+        for (let k = 0; k < r1.val; k++) {
+            const at = readU16LE(buf, off); off += 2;
+            const f = []; for (let r = 0; r < 16; r++) { f.push(readU16LE(buf, off)); off += 2; }
+            kf.push({ angle_tick: at, frame: f });
+        }
+        pages.push({ keyframes: kf });
+    }
+    return { pages };
+}
+
+function renderFrame(canvas, frame) {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const cw = W / 16, ch = H / 16;
+    ctx.clearRect(0, 0, W, H);
+    for (let r = 0; r < 16; r++) {
+        for (let c = 0; c < 16; c++) {
+            ctx.fillStyle = (frame[r] >> c) & 1 ? '#58a6ff' : '#161b22';
+            ctx.fillRect(c * cw, r * ch, cw, ch);
+        }
+    }
+    ctx.strokeStyle = '#30363d'; ctx.lineWidth = 0.5;
+    for (let i = 0; i <= 16; i++) {
+        ctx.beginPath(); ctx.moveTo(i * cw, 0); ctx.lineTo(i * cw, H); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i * ch); ctx.lineTo(W, i * ch); ctx.stroke();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const els = {
+    statusIndicator: $('statusIndicator'), pageCount: $('pageCount'), animCount: $('animCount'),
+    startBtn: $('startBtn'), stopBtn: $('stopBtn'),
+    uploadArea: $('uploadArea'), fileInput: $('fileInput'), uploadStatus: $('uploadStatus'),
+    previewPanel: $('previewPanel'), previewCanvas: $('previewCanvas'),
+    pageSelect: $('pageSelect'), frameInfo: $('frameInfo'), frameLabel: $('frameLabel'),
+    prevBtn: $('prevBtn'), nextBtn: $('nextBtn'),
+    shapeCube: $('shapeCube'), shapeSphere: $('shapeSphere'),
+    shapeCylinder: $('shapeCylinder'), shapeCone: $('shapeCone'),
+    stepsInput: $('stepsInput'),
+};
+
+let animData = null;
+let currentPage = 0;
+let currentIdx = 0;
+
+async function pollStatus() {
+    try {
+        const r = await fetch('/api/status');
+        const d = await r.json();
+        els.statusIndicator.textContent = d.is_running ? '运行中' : '停止';
+        els.statusIndicator.className = 'value ' + (d.is_running ? 'status-on' : 'status-off');
+        els.pageCount.textContent = d.pages || '--';
+        els.animCount.textContent = d.animation_count || 0;
+        els.startBtn.disabled = d.is_running;
+        els.stopBtn.disabled = !d.is_running;
+    } catch(e) {}
+}
+
+function showPreview() {
+    if (!animData || !animData.pages.length) return;
+    const page = animData.pages[currentPage];
+    if (!page || !page.keyframes.length) return;
+    const kf = page.keyframes[currentIdx];
+    renderFrame(els.previewCanvas, kf.frame);
+    els.frameInfo.textContent = `帧 ${currentIdx + 1}/${page.keyframes.length} · 角度 ${kf.angle_tick}`;
+    els.frameLabel.textContent = `#${kf.angle_tick} (${(kf.angle_tick / 1024 * 360).toFixed(1)}°)`;
+    els.prevBtn.disabled = currentIdx <= 0;
+    els.nextBtn.disabled = currentIdx >= page.keyframes.length - 1;
+}
+
+async function uploadBytes(bytes, label) {
+    const st = els.uploadStatus;
+    st.className = 'upload-status info';
+    st.classList.remove('hidden');
+    st.textContent = `🔼 ${label} (${(bytes.length / 1024).toFixed(1)} KB)...`;
+
+    try {
+        const r = await fetch('/api/upload', {
+            method: 'POST', body: bytes,
+            headers: { 'Content-Type': 'application/octet-stream' }
+        });
+        const d = await r.json();
+        if (d.status === 'ok') {
+            st.className = 'upload-status success';
+            st.textContent = `✓ ${label} · ${d.pages || 1} 页`;
+            pollStatus();
+        } else {
+            throw new Error(d.message || '上传失败');
+        }
+    } catch(e) {
+        st.className = 'upload-status error';
+        st.textContent = `✗ ${e.message}`;
+    }
+}
+
+function bakeAndShow(label, generator) {
+    const steps = parseInt(els.stepsInput.value) || 256;
+    const st = els.uploadStatus;
+    st.className = 'upload-status busy';
+    st.classList.remove('hidden');
+    st.textContent = `🔄 ${label} ${steps} 帧...`;
+
+    // 在 setTimeout 里跑，避免阻塞 UI
+    setTimeout(() => {
+        const t0 = performance.now();
+        const frames = generator(steps);
+        const postcard = encodeAnimation(frames);
+        const t1 = performance.now();
+
+        // 预览
+        animData = decodeAnimation(postcard);
+        currentPage = 0; currentIdx = 0;
+        els.previewPanel.classList.remove('hidden');
+        showPreview();
+
+        st.className = 'upload-status info';
+        st.textContent = `🔼 ${label} (${(t1 - t0).toFixed(0)}ms · ${(postcard.length / 1024).toFixed(1)} KB) 上传中...`;
+        uploadBytes(postcard, label);
+    }, 10);
+}
+
+async function uploadFile(file) {
+    const st = els.uploadStatus;
+    st.className = 'upload-status info';
+    st.classList.remove('hidden');
+    st.textContent = `🔄 解析 ${file.name}...`;
+
+    try {
+        const buf = await file.arrayBuffer();
+        animData = decodeAnimation(buf);
+        currentPage = 0; currentIdx = 0;
+        els.previewPanel.classList.remove('hidden');
+        showPreview();
+        await uploadBytes(new Uint8Array(buf), file.name);
+    } catch(e) {
+        st.className = 'upload-status error';
+        st.textContent = `✗ ${e.message}`;
+    }
+}
+
+function init() {
+    pollStatus();
+    setInterval(pollStatus, 2000);
+
+    els.startBtn.addEventListener('click', async () => { await fetch('/api/start', { method: 'POST' }); pollStatus(); });
+    els.stopBtn.addEventListener('click', async () => { await fetch('/api/stop', { method: 'POST' }); pollStatus(); });
+
+    els.shapeCube.addEventListener('click', () => bakeAndShow('正方体', cube));
+    els.shapeSphere.addEventListener('click', () => bakeAndShow('球体', sphere));
+    els.shapeCylinder.addEventListener('click', () => bakeAndShow('圆柱', cylinder));
+    els.shapeCone.addEventListener('click', () => bakeAndShow('圆锥', cone));
+
+    els.fileInput.addEventListener('change', (e) => { if (e.target.files.length) uploadFile(e.target.files[0]); e.target.value = ''; });
+    els.uploadArea.addEventListener('click', () => els.fileInput.click());
+    els.uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); els.uploadArea.classList.add('drag-over'); });
+    els.uploadArea.addEventListener('dragleave', () => els.uploadArea.classList.remove('drag-over'));
+    els.uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        els.uploadArea.classList.remove('drag-over');
+        if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
+    });
+
+    els.prevBtn.addEventListener('click', () => { if (currentIdx > 0) { currentIdx--; showPreview(); } });
+    els.nextBtn.addEventListener('click', () => {
+        if (animData && currentIdx < animData.pages[currentPage].keyframes.length - 1) { currentIdx++; showPreview(); }
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft') { els.prevBtn.click(); e.preventDefault(); }
+        if (e.key === 'ArrowRight') { els.nextBtn.click(); e.preventDefault(); }
+    });
+}
+
+init();
+</script>
+</body>
+</html>
